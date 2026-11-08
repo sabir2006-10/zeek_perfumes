@@ -334,22 +334,17 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         error: (err, _) => Center(child: Text('Error loading products: $err')),
         data: (allProducts) {
           if (allProducts.isEmpty) {
-            return Center(
+            return const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.inventory_2_outlined, size: 64, color: AppColors.primaryGold),
-                  const SizedBox(height: 16),
-                  const Text('No Products Found in Inventory', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 8),
-                  const Text('Seed sample Oud, Athar & Non-Oil products to start testing POS immediately.'),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.auto_fix_high_rounded),
-                    label: const Text('Load Sample Perfumes Catalog'),
-                    onPressed: () async {
-                      await ref.read(shopRepositoryProvider).seedInitialDataIfEmpty();
-                    },
+                  Icon(Icons.inventory_2_outlined, size: 64, color: AppColors.primaryGold),
+                  SizedBox(height: 16),
+                  Text('No Products Found in Inventory', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  SizedBox(height: 8),
+                  Text(
+                    'Add products from the Inventory or Non-Oil sections to start billing.',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                 ],
               ),
