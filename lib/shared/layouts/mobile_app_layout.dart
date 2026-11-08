@@ -117,16 +117,9 @@ class MobileAppLayout extends ConsumerWidget {
                     ),
                     const Divider(),
                     ListTile(
-                      leading: const Icon(Icons.swap_horiz_rounded, color: AppColors.cashColor),
-                      title: Text('Role: ${auth.currentUser?.role.displayName}'),
-                      subtitle: const Text('Tap to switch between Admin and Employee'),
-                      onTap: () {
-                        final newRole = auth.currentUser?.role == UserRole.admin
-                            ? UserRole.employee
-                            : UserRole.admin;
-                        ref.read(authProvider.notifier).switchRole(newRole);
-                        Navigator.pop(ctx);
-                      },
+                      leading: const Icon(Icons.verified_user_rounded, color: AppColors.primaryGold),
+                      title: Text(auth.currentUser?.displayName ?? 'Zeek (Owner)'),
+                      subtitle: Text(auth.currentUser?.email ?? 'admin@zeekperfumes.com'),
                     ),
                     ListTile(
                       leading: const Icon(Icons.logout_rounded, color: AppColors.ruby),
@@ -178,7 +171,7 @@ class MobileAppLayout extends ConsumerWidget {
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
-              user?.role.displayName ?? '',
+              user?.displayName ?? 'Zeek (Owner)',
               style: const TextStyle(color: AppColors.goldLight, fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ),

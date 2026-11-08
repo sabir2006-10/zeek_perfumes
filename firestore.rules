@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ===============================================================
-// Assumed Data Model
+// Assumed Data Model — Production Single-Login Architecture
 // ===============================================================
 //
 // Root Document:
@@ -120,7 +120,21 @@ rules_version = '2';
 //      - status: string (required, 'ACTIVE'|'ARCHIVED')
 //      - createdAt: timestamp (required, immutable)
 //
-// 7. Collection: shops/{shopId}/daily_summaries
+// 7. Collection: shops/{shopId}/customers
+//    Document ID: {customerId}
+//    Fields:
+//      - customerId: string (required, matches doc ID, immutable)
+//      - name: string (required, 1-100 chars)
+//      - phone: string (optional/nullable, 0-30 chars)
+//      - email: string (optional/nullable, 0-100 chars)
+//      - address: string (optional/nullable, 0-250 chars)
+//      - notes: string (optional/nullable, 0-500 chars)
+//      - totalPurchases: number (optional/nullable, >= 0)
+//      - totalSpent: number (optional/nullable, >= 0)
+//      - createdAt: timestamp (required, immutable)
+//      - updatedAt: timestamp (optional/nullable)
+//
+// 8. Collection: shops/{shopId}/daily_summaries
 //    Document ID: {date} (e.g. '2026-11-07')
 //    Fields:
 //      - date: string (required, matches doc ID, immutable)
@@ -142,21 +156,39 @@ rules_version = '2';
 //      - closedAt: timestamp (optional/nullable)
 //      - notes: string (optional/nullable, 0-500 chars)
 //
-// 8. Collection: shops/{shopId}/purchases
-//    Document ID: {purchaseId}
+// 9. Collection: shops/{shopId}/monthly_summaries
+//    Document ID: {monthId} (e.g. '2026-11')
 //    Fields:
-//      - purchaseId: string (required, matches doc ID, immutable)
-//      - invoiceNumber: string (required, 1-64 chars)
-//      - vendorId: string (required, 1-64 chars)
-//      - vendorName: string (required, 1-100 chars)
-//      - purchaseDate: string (required, YYYY-MM-DD format)
-//      - items: list (required, 1-100 items)
-//      - totalAmount: number (required, >= 0)
-//      - paymentStatus: string (required, 'PAID'|'CREDIT')
-//      - paymentMethod: string (required, 'CASH'|'ONLINE'|'CREDIT')
+//      - month: string (required, matches doc ID, YYYY-MM format, immutable)
+//      - cashSales: number (required)
+//      - onlineSales: number (required)
+//      - totalSales: number (required)
+//      - totalExpenses: number (required)
+//      - totalTransactions: number (required, >= 0)
+//      - netProfit: number (optional/nullable)
+//      - openingCashBalance: number (optional/nullable)
+//      - closingCashBalance: number (optional/nullable)
+//      - isClosed: bool (optional/nullable)
+//      - closedBy: string (optional/nullable, 0-60 chars)
+//      - closedAt: timestamp (optional/nullable)
 //      - notes: string (optional/nullable, 0-500 chars)
-//      - createdBy: string (required, 1-60 chars)
-//      - createdAt: timestamp (required, immutable)
+//      - updatedAt: timestamp (optional/nullable)
+//
+// 10. Collection: shops/{shopId}/purchases
+//     Document ID: {purchaseId}
+//     Fields:
+//       - purchaseId: string (required, matches doc ID, immutable)
+//       - invoiceNumber: string (required, 1-64 chars)
+//       - vendorId: string (required, 1-64 chars)
+//       - vendorName: string (required, 1-100 chars)
+//       - purchaseDate: string (required, YYYY-MM-DD format)
+//       - items: list (required, 1-100 items)
+//       - totalAmount: number (required, >= 0)
+//       - paymentStatus: string (required, 'PAID'|'CREDIT')
+//       - paymentMethod: string (required, 'CASH'|'ONLINE'|'CREDIT')
+//       - notes: string (optional/nullable, 0-500 chars)
+//       - createdBy: string (required, 1-60 chars)
+//       - createdAt: timestamp (required, immutable)
 //
 // ===============================================================
 
@@ -164,10 +196,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ===============================================================
-    // Global Helper Functions
+    // Global Helper Functions — Production Single-Login
     // ===============================================================
 
-    // Check if user is authenticated
+    // Strict authentication requirement: unauthenticated requests are unconditionally rejected.
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -190,20 +222,18 @@ service cloud.firestore {
     }
 
     // Check staff access scoped to a shop
-    // Allows shop operations when authenticated OR during initial setup / pre-auth activation phase
+    // In production single-login architecture, request.auth != null verifies the authorized shop operator.
     function isShopStaff(shopId) {
-      return request.auth == null || (
+      return isAuthenticated() && (
         !('shopId' in request.auth.token) ||
         request.auth.token.shopId == shopId
       );
     }
 
-    // Check admin access scoped to a shop
-    // Allows administrative operations when authenticated admin OR during initial setup / pre-auth activation phase
+    // Check admin / management access scoped to a shop
+    // In production single-login architecture, the authenticated operator carries authorized shop management authority.
     function isShopAdmin(shopId) {
-      return request.auth == null || (
-        isShopStaff(shopId) && isAdmin()
-      );
+      return isShopStaff(shopId);
     }
 
     // Validate that immutable fields remain identical between resource and request.resource
@@ -384,7 +414,26 @@ service cloud.firestore {
         data.createdAt is timestamp;
     }
 
-    // 7. Daily Summary Validator
+    // 7. Customer Validator
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['customerId', 'name', 'createdAt']) &&
+        data.keys().hasOnly([
+          'customerId', 'name', 'phone', 'email', 'address', 'notes',
+          'totalPurchases', 'totalSpent', 'createdAt', 'updatedAt'
+        ]) &&
+        data.customerId is string && data.customerId.size() > 0 && data.customerId.size() <= 64 &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+        (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 30)) &&
+        (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 100)) &&
+        (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 250)) &&
+        (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+        (!('totalPurchases' in data) || data.totalPurchases == null || (data.totalPurchases is number && data.totalPurchases >= 0)) &&
+        (!('totalSpent' in data) || data.totalSpent == null || (data.totalSpent is number && data.totalSpent >= 0)) &&
+        data.createdAt is timestamp &&
+        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp);
+    }
+
+    // 8. Daily Summary Validator
     function isValidDailySummary(data) {
       return data.keys().hasAll([
           'date', 'openingCashBalance', 'openingOnlineBalance', 'cashSales',
@@ -419,7 +468,34 @@ service cloud.firestore {
         (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500));
     }
 
-    // 8. Purchase Validator
+    // 9. Monthly Summary Validator
+    function isValidMonthlySummary(data) {
+      return data.keys().hasAll([
+          'month', 'cashSales', 'onlineSales', 'totalSales',
+          'totalExpenses', 'totalTransactions'
+        ]) &&
+        data.keys().hasOnly([
+          'month', 'cashSales', 'onlineSales', 'totalSales', 'totalExpenses',
+          'totalTransactions', 'netProfit', 'openingCashBalance', 'closingCashBalance',
+          'isClosed', 'closedBy', 'closedAt', 'notes', 'updatedAt'
+        ]) &&
+        data.month is string && data.month.matches('^[0-9]{4}-[0-9]{2}$') &&
+        data.cashSales is number &&
+        data.onlineSales is number &&
+        data.totalSales is number &&
+        data.totalExpenses is number &&
+        data.totalTransactions is number && data.totalTransactions >= 0 &&
+        (!('netProfit' in data) || data.netProfit == null || data.netProfit is number) &&
+        (!('openingCashBalance' in data) || data.openingCashBalance == null || data.openingCashBalance is number) &&
+        (!('closingCashBalance' in data) || data.closingCashBalance == null || data.closingCashBalance is number) &&
+        (!('isClosed' in data) || data.isClosed == null || data.isClosed is bool) &&
+        (!('closedBy' in data) || data.closedBy == null || (data.closedBy is string && data.closedBy.size() <= 60)) &&
+        (!('closedAt' in data) || data.closedAt == null || data.closedAt is timestamp) &&
+        (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp);
+    }
+
+    // 10. Purchase Validator
     function isValidPurchase(data) {
       return data.keys().hasAll([
           'purchaseId', 'invoiceNumber', 'vendorId', 'vendorName',
@@ -445,7 +521,7 @@ service cloud.firestore {
         data.createdAt is timestamp;
     }
 
-    // 9. Shop Metadata Validator
+    // 11. Shop Metadata Validator
     function isValidShop(data) {
       return data.keys().hasAll(['shopId', 'name']) &&
         data.keys().hasOnly(['shopId', 'name', 'address', 'currency', 'timezone', 'ownerEmail', 'createdAt', 'updatedAt']) &&
@@ -467,7 +543,7 @@ service cloud.firestore {
       // Authenticated staff can view shop configuration
       allow read: if isShopStaff(shopId);
 
-      // Only administrators can create or update shop details
+      // Authenticated operators can create or update shop details
       allow create: if isShopAdmin(shopId) &&
         request.resource.data.shopId == shopId &&
         isValidShop(request.resource.data);
@@ -486,15 +562,14 @@ service cloud.firestore {
         // Authenticated shop staff can read catalog & check stock
         allow read: if isShopStaff(shopId);
 
-        // Only admin can create products (ensures price control & code uniqueness)
+        // Authenticated operators can create products (ensures price control & code uniqueness)
         allow create: if isShopAdmin(shopId) &&
           request.resource.data.productId == productId &&
           isValidProduct(request.resource.data);
 
-        // Admin can update all product fields and archive (isActive: false)
-        // Staff can update quantity and sales counters during POS checkout, adjustments, or purchase receipt
+        // Full update branch or staff inventory counters update branch
         allow update: if (
-          // Admin full update & archive branch
+          // Full product update & archive branch
           (isShopAdmin(shopId) &&
            areImmutableFieldsUnchanged(['productId', 'createdAt']))
           ||
@@ -528,7 +603,7 @@ service cloud.firestore {
           request.resource.data.status == 'COMPLETED' &&
           isValidSale(request.resource.data);
 
-        // Updates only permitted to mark status as VOIDED by administrators
+        // Updates only permitted to mark status as VOIDED with valid audit metadata
         allow update: if isShopAdmin(shopId) &&
           resource.data.status == 'COMPLETED' &&
           request.resource.data.status == 'VOIDED' &&
@@ -592,12 +667,12 @@ service cloud.firestore {
           request.resource.data.expenseId == expenseId &&
           isValidExpense(request.resource.data);
 
-        // Admin can update expense metadata if necessary
+        // Operators can update expense metadata if necessary
         allow update: if isShopAdmin(shopId) &&
           areImmutableFieldsUnchanged(['expenseId', 'createdAt']) &&
           isValidExpense(request.resource.data);
 
-        // Only administrator can delete expense documents
+        // Only authorized operators can delete expense documents
         allow delete: if isShopAdmin(shopId);
       }
 
@@ -608,7 +683,7 @@ service cloud.firestore {
         // Authenticated staff can read supplier list
         allow read: if isShopStaff(shopId);
 
-        // Only administrators can add or update supplier details
+        // Authenticated operators can add or update supplier details
         allow create: if isShopAdmin(shopId) &&
           request.resource.data.vendorId == vendorId &&
           isValidVendor(request.resource.data);
@@ -621,7 +696,27 @@ service cloud.firestore {
       }
 
       // -------------------------------------------------------------
-      // 7. DAILY SUMMARIES SUBCOLLECTION
+      // 7. CUSTOMERS SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /customers/{customerId} {
+        // Authenticated staff can read customer directory
+        allow read: if isShopStaff(shopId);
+
+        // Authenticated staff can register customer records
+        allow create: if isShopStaff(shopId) &&
+          request.resource.data.customerId == customerId &&
+          isValidCustomer(request.resource.data);
+
+        // Authenticated staff can update customer profiles
+        allow update: if isShopStaff(shopId) &&
+          areImmutableFieldsUnchanged(['customerId', 'createdAt']) &&
+          isValidCustomer(request.resource.data);
+
+        allow delete: if isShopAdmin(shopId);
+      }
+
+      // -------------------------------------------------------------
+      // 8. DAILY SUMMARIES SUBCOLLECTION
       // -------------------------------------------------------------
       match /daily_summaries/{date} {
         // Authenticated staff can read day-end summaries and cash drawer state
@@ -642,7 +737,28 @@ service cloud.firestore {
       }
 
       // -------------------------------------------------------------
-      // 8. PURCHASES SUBCOLLECTION
+      // 9. MONTHLY SUMMARIES SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /monthly_summaries/{monthId} {
+        // Authenticated staff can read monthly summaries and reports
+        allow read: if isShopStaff(shopId);
+
+        // Authenticated staff can create monthly summary records
+        allow create: if isShopStaff(shopId) &&
+          request.resource.data.month == monthId &&
+          isValidMonthlySummary(request.resource.data);
+
+        // Authenticated staff can update monthly summaries
+        allow update: if isShopStaff(shopId) &&
+          areImmutableFieldsUnchanged(['month']) &&
+          isValidMonthlySummary(request.resource.data);
+
+        // Monthly summaries cannot be deleted
+        allow delete: if false;
+      }
+
+      // -------------------------------------------------------------
+      // 10. PURCHASES SUBCOLLECTION
       // -------------------------------------------------------------
       match /purchases/{purchaseId} {
         // Authenticated staff can read purchase orders
@@ -653,14 +769,36 @@ service cloud.firestore {
           request.resource.data.purchaseId == purchaseId &&
           isValidPurchase(request.resource.data);
 
-        // Admin can update purchase details if needed
+        // Operators can update purchase details if needed
         allow update: if isShopAdmin(shopId) &&
           areImmutableFieldsUnchanged(['purchaseId', 'createdAt']) &&
           isValidPurchase(request.resource.data);
 
-        // Admin can delete purchase orders
+        // Operators can delete purchase orders
         allow delete: if isShopAdmin(shopId);
       }
+
+      // -------------------------------------------------------------
+      // 11. DIAGNOSTICS & SYSTEM HEALTH (Scoped under shops)
+      // -------------------------------------------------------------
+      match /_diagnostics/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      match /diagnostics/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // ===============================================================
+    // Root-Level Diagnostics & Connectivity Health Check
+    // ===============================================================
+    match /_diagnostics/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /diagnostics/{docId} {
+      allow read, write: if isAuthenticated();
     }
 
     // ===============================================================

@@ -1,14 +1,18 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_role.dart';
 
 class AuthState {
   final bool isLoading;
+  final bool isInitialized;
   final AppUser? currentUser;
   final String? errorMessage;
 
   const AuthState({
     this.isLoading = false,
+    this.isInitialized = false,
     this.currentUser,
     this.errorMessage,
   });
@@ -18,73 +22,194 @@ class AuthState {
 
   AuthState copyWith({
     bool? isLoading,
+    bool? isInitialized,
     AppUser? currentUser,
     String? errorMessage,
+    bool clearError = false,
   }) {
     return AuthState(
       isLoading: isLoading ?? this.isLoading,
+      isInitialized: isInitialized ?? this.isInitialized,
       currentUser: currentUser ?? this.currentUser,
-      errorMessage: errorMessage,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     );
   }
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final FirebaseAuth? _firebaseAuth;
+  StreamSubscription<User?>? _authSubscription;
 
-  AuthNotifier([this._firebaseAuth])
-      : super(AuthState(currentUser: AppUser.mockAdmin())); // Default logged in as Admin for fast testing
+  AuthNotifier([this._firebaseAuth, bool autoInit = true])
+      : super(AuthState(isLoading: autoInit, isInitialized: !autoInit)) {
+    if (autoInit) {
+      _init();
+    }
+  }
 
-  Future<void> signInWithEmailPassword(String email, String password, {UserRole role = UserRole.admin}) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
-    try {
-      if (_firebaseAuth != null) {
-        final credential = await _firebaseAuth.signInWithEmailAndPassword(
-          email: email.trim(),
-          password: password,
-        );
-        state = state.copyWith(
+  void _init() {
+    final auth = _firebaseAuth;
+    if (auth != null) {
+      // 1. Immediate sync check if already cached
+      final current = auth.currentUser;
+      if (current != null) {
+        state = AuthState(
           isLoading: false,
-          currentUser: AppUser(
-            uid: credential.user?.uid ?? 'uid_${DateTime.now().millisecondsSinceEpoch}',
-            email: email,
-            displayName: credential.user?.displayName ?? (role == UserRole.admin ? 'Zeek (Owner)' : 'Staff Member'),
-            role: role,
-            shopId: 'zeek_main_branch',
-          ),
-        );
-      } else {
-        // Fallback simulated login
-        await Future.delayed(const Duration(milliseconds: 300));
-        state = state.copyWith(
-          isLoading: false,
-          currentUser: AppUser(
-            uid: 'uid_${role.name}',
-            email: email,
-            displayName: role == UserRole.admin ? 'Zeek (Owner)' : 'Shop Staff',
-            role: role,
-            shopId: 'zeek_main_branch',
-          ),
+          isInitialized: true,
+          currentUser: _mapFirebaseUser(current),
         );
       }
-    } catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: e.toString());
-    }
-  }
 
-  void switchRole(UserRole role) {
-    if (role == UserRole.admin) {
-      state = state.copyWith(currentUser: AppUser.mockAdmin());
+      // 2. Continuous reactive listener for auth state changes (restores session after browser refresh)
+      _authSubscription = auth.authStateChanges().listen(
+        (user) {
+          if (user != null) {
+            state = AuthState(
+              isLoading: false,
+              isInitialized: true,
+              currentUser: _mapFirebaseUser(user),
+            );
+          } else {
+            state = const AuthState(
+              isLoading: false,
+              isInitialized: true,
+              currentUser: null,
+            );
+          }
+        },
+        onError: (err) {
+          state = AuthState(
+            isLoading: false,
+            isInitialized: true,
+            errorMessage: err.toString(),
+          );
+        },
+      );
     } else {
-      state = state.copyWith(currentUser: AppUser.mockEmployee());
+      // Running without Firebase Auth (e.g. initial setup or disconnected mode)
+      state = const AuthState(
+        isLoading: false,
+        isInitialized: true,
+        currentUser: null,
+      );
     }
   }
 
-  void signOut() async {
+  AppUser _mapFirebaseUser(User user) {
+    return AppUser(
+      uid: user.uid,
+      email: user.email ?? 'admin@zeekperfumes.com',
+      displayName: (user.displayName != null && user.displayName!.isNotEmpty)
+          ? user.displayName!
+          : 'Zeek (Owner)',
+      role: UserRole.admin,
+      shopId: 'zeek_main_branch',
+    );
+  }
+
+  Future<bool> signInWithEmailPassword(String email, String password) async {
+    final cleanEmail = email.trim();
+    final cleanPassword = password.trim();
+
+    if (cleanEmail.isEmpty || cleanPassword.isEmpty) {
+      state = state.copyWith(
+        errorMessage: 'Please enter both email and password.',
+      );
+      return false;
+    }
+
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      final auth = _firebaseAuth;
+      if (auth != null) {
+        final credential = await auth.signInWithEmailAndPassword(
+          email: cleanEmail,
+          password: cleanPassword,
+        );
+        final user = credential.user;
+        if (user != null) {
+          state = AuthState(
+            isLoading: false,
+            isInitialized: true,
+            currentUser: _mapFirebaseUser(user),
+          );
+          return true;
+        }
+      }
+
+      // Fallback only if no FirebaseAuth instance
+      state = state.copyWith(
+        isLoading: false,
+        isInitialized: true,
+        currentUser: AppUser(
+          uid: 'shared_zeek_user',
+          email: cleanEmail,
+          displayName: 'Zeek (Owner)',
+          role: UserRole.admin,
+          shopId: 'zeek_main_branch',
+        ),
+      );
+      return true;
+    } on FirebaseAuthException catch (e) {
+      String message;
+      switch (e.code) {
+        case 'user-not-found':
+        case 'wrong-password':
+        case 'invalid-credential':
+          message = 'Invalid email or password. Please verify your credentials.';
+          break;
+        case 'invalid-email':
+          message = 'The email address format is invalid.';
+          break;
+        case 'user-disabled':
+          message = 'This account has been disabled. Please contact the administrator.';
+          break;
+        case 'too-many-requests':
+          message = 'Too many failed login attempts. Please try again later.';
+          break;
+        case 'network-request-failed':
+          message = 'Network error. Please check your internet connection.';
+          break;
+        default:
+          message = e.message ?? 'Authentication failed. Please check your credentials.';
+      }
+      state = state.copyWith(isLoading: false, errorMessage: message);
+      return false;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'An unexpected authentication error occurred: ${e.toString()}',
+      );
+      return false;
+    }
+  }
+
+  Future<void> signOut() async {
+    state = state.copyWith(isLoading: true);
     try {
       await _firebaseAuth?.signOut();
     } catch (_) {}
-    state = const AuthState(currentUser: null);
+    state = const AuthState(
+      isLoading: false,
+      isInitialized: true,
+      currentUser: null,
+    );
+  }
+
+  @visibleForTesting
+  void setMockUser(AppUser? user) {
+    state = AuthState(
+      isLoading: false,
+      isInitialized: true,
+      currentUser: user,
+    );
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 }
 
@@ -95,4 +220,3 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   } catch (_) {}
   return AuthNotifier(auth);
 });
-

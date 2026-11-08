@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for Zeek Perfumes & Athar Management System
+// Enforces strict authentication for all shop media, PDF receipts, and exports.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Default deny for unmatched paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Shop assets (PDF reports, invoice receipts, product images, database backups)
+    // Access strictly restricted to authenticated shop operators.
+    match /shops/{shopId}/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+

@@ -155,7 +155,7 @@ class WebDashboardLayout extends ConsumerWidget {
                   ),
                 ),
 
-                // Role switch banner for testing
+                // Authenticated Operator Card
                 Container(
                   margin: const EdgeInsets.all(12),
                   padding: const EdgeInsets.all(12),
@@ -164,53 +164,45 @@ class WebDashboardLayout extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFF2D3748)),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            user?.role.displayName ?? 'Guest',
-                            style: const TextStyle(
-                              color: AppColors.goldLight,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          InkWell(
-                            onTap: () {
-                              final newRole = user?.role == UserRole.admin
-                                  ? UserRole.employee
-                                  : UserRole.admin;
-                              ref.read(authProvider.notifier).switchRole(newRole);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaryGold.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'Switch Role',
-                                style: TextStyle(
-                                  color: AppColors.goldLight,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        user?.email ?? '',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
-                          fontSize: 11,
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryGold.withOpacity(0.15),
+                          shape: BoxShape.circle,
                         ),
-                        overflow: TextOverflow.ellipsis,
+                        child: const Icon(
+                          Icons.verified_user_rounded,
+                          color: AppColors.primaryGold,
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              user?.displayName ?? 'Zeek (Owner)',
+                              style: const TextStyle(
+                                color: AppColors.goldLight,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              user?.email ?? '',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.5),
+                                fontSize: 10,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -282,7 +274,7 @@ class WebDashboardLayout extends ConsumerWidget {
                         radius: 18,
                         backgroundColor: AppColors.primaryGold.withOpacity(0.2),
                         child: Text(
-                          (user?.displayName ?? 'U').substring(0, 1).toUpperCase(),
+                          (user?.displayName ?? 'Z').substring(0, 1).toUpperCase(),
                           style: const TextStyle(
                             color: AppColors.goldDark,
                             fontWeight: FontWeight.w700,
@@ -296,11 +288,11 @@ class WebDashboardLayout extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            user?.displayName ?? 'Staff User',
+                            user?.displayName ?? 'Zeek (Owner)',
                             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                           ),
                           Text(
-                            user?.role.displayName ?? '',
+                            user?.email ?? 'admin@zeekperfumes.com',
                             style: TextStyle(color: Colors.grey[600], fontSize: 11),
                           ),
                         ],

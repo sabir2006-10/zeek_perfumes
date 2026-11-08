@@ -21,3 +21,4 @@ echo "Building Athar Shop for production..."
 flutter build web --release
 
 echo "Flutter Web build completed successfully!"
+
