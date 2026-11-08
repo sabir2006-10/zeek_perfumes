@@ -1,0 +1,28 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "zeek-perfume-5620f",
+          "appId": "1:24900392691:android:3e919f720c913f13058986",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "zeek-perfume-5620f",
+          "configurations": {
+            "android": "1:24900392691:android:3e919f720c913f13058986",
+            "ios": "1:24900392691:ios:e19250ee10944881058986",
+            "macos": "1:24900392691:ios:e19250ee10944881058986",
+            "web": "1:24900392691:web:368472d4392be59d058986",
+            "windows": "1:24900392691:web:70dba65989e2f7a8058986"
+          }
+        }
+      }
+    }
+  }
+}

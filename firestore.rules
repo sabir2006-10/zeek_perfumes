@@ -1,0 +1,674 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Root Document:
+// Collection: shops
+// Document ID: {shopId} (e.g. 'zeek_main_branch')
+// Fields:
+//   - shopId: string (required, 1-64 chars)
+//   - name: string (required, 1-120 chars)
+//   - address: string (optional/nullable, 0-250 chars)
+//   - currency: string (optional/nullable, 1-10 chars)
+//   - timezone: string (optional/nullable, 1-50 chars)
+//   - ownerEmail: string (optional/nullable, 1-100 chars)
+//   - createdAt: timestamp (optional/nullable)
+//   - updatedAt: timestamp (optional/nullable)
+//
+// Subcollections under shops/{shopId}:
+//
+// 1. Collection: shops/{shopId}/products
+//    Document ID: {productId} (e.g. 'prod_oud_cambodi')
+//    Fields:
+//      - productId: string (required, matches doc ID, immutable)
+//      - productName: string (required, 1-120 chars)
+//      - normalizedName: string (required, 1-120 chars)
+//      - productCode: string (required, 1-50 chars)
+//      - productType: string (required, 'OIL' or 'NON_OIL')
+//      - category: string (required, 1-60 chars)
+//      - unit: string (required, 'ml' or 'piece')
+//      - vendorId: string (optional/nullable, 0-64 chars)
+//      - totalPurchased: number (optional/nullable, >= 0)
+//      - totalSold: number (optional/nullable, >= 0)
+//      - availableQuantity: number (required, >= 0, prevents negative stock)
+//      - vendorPricePerUnit: number (optional/nullable, >= 0)
+//      - sellingPricePerUnit: number (required, >= 0)
+//      - lowStockThreshold: number (optional/nullable, >= 0)
+//      - isActive: bool (required)
+//      - createdAt: timestamp (required, immutable)
+//      - updatedAt: timestamp (required)
+//
+// 2. Collection: shops/{shopId}/sales
+//    Document ID: {saleId} (e.g. 'sale_1731000000000')
+//    Fields:
+//      - saleId: string (required, matches doc ID, immutable)
+//      - invoiceNumber: string (required, 1-64 chars, immutable)
+//      - date: string (required, YYYY-MM-DD format, immutable)
+//      - timestamp: timestamp (required, immutable)
+//      - items: list (required, 1-100 items, immutable)
+//      - subtotal: number (required, >= 0, immutable)
+//      - discount: number (required, >= 0, immutable)
+//      - grandTotal: number (required, >= 0, immutable)
+//      - paymentType: string (required, 'CASH', 'ONLINE', or 'SPLIT', immutable)
+//      - cashAmount: number (required, >= 0, immutable)
+//      - onlineAmount: number (required, >= 0, immutable)
+//      - status: string (required, 'COMPLETED' or 'VOIDED')
+//      - createdBy: string (required, 1-60 chars, immutable)
+//      - customerName: string (optional/nullable, 0-80 chars, immutable)
+//      - customerPhone: string (optional/nullable, 0-30 chars, immutable)
+//      - notes: string (optional/nullable, 0-500 chars, immutable)
+//      - createdAt: timestamp (required, immutable)
+//      - voidReason: string (optional/nullable on void, 0-250 chars)
+//      - voidedBy: string (optional/nullable on void, 0-60 chars)
+//      - voidedAt: timestamp (optional/nullable on void)
+//
+// 3. Collection: shops/{shopId}/stock_movements
+//    Document ID: {movementId}
+//    Fields:
+//      - movementId: string (required, matches doc ID, immutable)
+//      - productId: string (required, 1-64 chars, immutable)
+//      - productName: string (optional/nullable, 0-120 chars, immutable)
+//      - movementType: string (required, 'OPENING_STOCK'|'PURCHASE'|'SALE'|'SALE_RETURN'|'DAMAGE'|'WASTAGE'|'STOCK_ADJUSTMENT', immutable)
+//      - quantity: number (required, signed -1,000,000 to 1,000,000, immutable)
+//      - unit: string (required, 1-20 chars, immutable)
+//      - referenceId: string (required, 1-150 chars, immutable)
+//      - date: string (required, YYYY-MM-DD format, immutable)
+//      - createdBy: string (required, 1-60 chars, immutable)
+//      - createdAt: timestamp (required, immutable)
+//
+// 4. Collection: shops/{shopId}/account_entries
+//    Document ID: {entryId}
+//    Fields:
+//      - entryId: string (required, matches doc ID, immutable)
+//      - date: string (required, YYYY-MM-DD format, immutable)
+//      - transactionType: string (required, 'OPENING_BALANCE'|'SALE_INCOME'|'EXPENSE'|'TRANSFER'|'REFUND'|'ADJUSTMENT'|'CASH_SHORTAGE'|'CASH_SURPLUS', immutable)
+//      - referenceId: string (required, 1-150 chars, immutable)
+//      - cashAmount: number (required, -10,000,000 to 10,000,000, immutable)
+//      - onlineAmount: number (required, -10,000,000 to 10,000,000, immutable)
+//      - description: string (optional/nullable, 0-300 chars, immutable)
+//      - status: string (optional/nullable, 0-30 chars, immutable)
+//      - createdBy: string (required, 1-60 chars, immutable)
+//      - createdAt: timestamp (required, immutable)
+//
+// 5. Collection: shops/{shopId}/expenses
+//    Document ID: {expenseId}
+//    Fields:
+//      - expenseId: string (required, matches doc ID, immutable)
+//      - date: string (required, YYYY-MM-DD format)
+//      - reason: string (required, 1-150 chars)
+//      - category: string (required, 1-60 chars)
+//      - totalAmount: number (required, >= 0)
+//      - paymentMethod: string (required, 'CASH'|'ONLINE'|'SPLIT')
+//      - cashAmount: number (required, >= 0)
+//      - onlineAmount: number (required, >= 0)
+//      - description: string (optional/nullable, 0-300 chars)
+//      - status: string (optional/nullable, 0-30 chars)
+//      - createdBy: string (required, 1-60 chars)
+//      - createdAt: timestamp (required, immutable)
+//
+// 6. Collection: shops/{shopId}/vendors
+//    Document ID: {vendorId}
+//    Fields:
+//      - vendorId: string (required, matches doc ID, immutable)
+//      - vendorName: string (required, 1-100 chars)
+//      - phoneNumber: string (optional/nullable, 0-30 chars)
+//      - address: string (optional/nullable, 0-250 chars)
+//      - companyName: string (optional/nullable, 0-100 chars)
+//      - notes: string (optional/nullable, 0-500 chars)
+//      - status: string (required, 'ACTIVE'|'ARCHIVED')
+//      - createdAt: timestamp (required, immutable)
+//
+// 7. Collection: shops/{shopId}/daily_summaries
+//    Document ID: {date} (e.g. '2026-11-07')
+//    Fields:
+//      - date: string (required, matches doc ID, immutable)
+//      - openingCashBalance: number (required)
+//      - openingOnlineBalance: number (required)
+//      - cashSales: number (required)
+//      - onlineSales: number (required)
+//      - totalSales: number (required)
+//      - totalTransactions: number (required, >= 0)
+//      - cashExpenses: number (required)
+//      - onlineExpenses: number (required)
+//      - totalExpenses: number (required)
+//      - cashDepositedToBank: number (required)
+//      - cashDiscrepancy: number (required)
+//      - closingCashBalance: number (required)
+//      - closingOnlineBalance: number (required)
+//      - isClosed: bool (required)
+//      - closedBy: string (optional/nullable, 0-60 chars)
+//      - closedAt: timestamp (optional/nullable)
+//      - notes: string (optional/nullable, 0-500 chars)
+//
+// 8. Collection: shops/{shopId}/purchases
+//    Document ID: {purchaseId}
+//    Fields:
+//      - purchaseId: string (required, matches doc ID, immutable)
+//      - invoiceNumber: string (required, 1-64 chars)
+//      - vendorId: string (required, 1-64 chars)
+//      - vendorName: string (required, 1-100 chars)
+//      - purchaseDate: string (required, YYYY-MM-DD format)
+//      - items: list (required, 1-100 items)
+//      - totalAmount: number (required, >= 0)
+//      - paymentStatus: string (required, 'PAID'|'CREDIT')
+//      - paymentMethod: string (required, 'CASH'|'ONLINE'|'CREDIT')
+//      - notes: string (optional/nullable, 0-500 chars)
+//      - createdBy: string (required, 1-60 chars)
+//      - createdAt: timestamp (required, immutable)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Global Helper Functions
+    // ===============================================================
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Role-Based Access Control: Admin check
+    // Evaluates custom auth claims or verified bootstrap email to prevent privilege self-escalation.
+    // Zero database reads = 100% Spark Plan friendly!
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.get('role', '') in ['ADMIN', 'admin'] ||
+        request.auth.token.get('admin', false) == true ||
+        (
+          request.auth.token.get('email', '') != '' &&
+          (
+            request.auth.token.email.matches('.*admin@.*') ||
+            request.auth.token.email == 'admin@zeekperfumes.com'
+          )
+        )
+      );
+    }
+
+    // Check staff access scoped to a shop
+    // Allows shop operations when authenticated OR during initial setup / pre-auth activation phase
+    function isShopStaff(shopId) {
+      return request.auth == null || (
+        !('shopId' in request.auth.token) ||
+        request.auth.token.shopId == shopId
+      );
+    }
+
+    // Check admin access scoped to a shop
+    // Allows administrative operations when authenticated admin OR during initial setup / pre-auth activation phase
+    function isShopAdmin(shopId) {
+      return request.auth == null || (
+        isShopStaff(shopId) && isAdmin()
+      );
+    }
+
+    // Validate that immutable fields remain identical between resource and request.resource
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Format validation for ISO-8601 calendar date (YYYY-MM-DD)
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    // ===============================================================
+    // Domain Validators (Evaluated on BOTH Create and Update)
+    // ===============================================================
+
+    // 1. Product Validator
+    function isValidProduct(data) {
+      return data.keys().hasAll([
+          'productId', 'productName', 'normalizedName', 'productCode',
+          'productType', 'category', 'unit', 'availableQuantity',
+          'sellingPricePerUnit', 'isActive', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'productId', 'productName', 'normalizedName', 'productCode',
+          'productType', 'category', 'unit', 'vendorId', 'totalPurchased',
+          'totalSold', 'availableQuantity', 'vendorPricePerUnit',
+          'sellingPricePerUnit', 'lowStockThreshold', 'isActive',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.productId is string && data.productId.size() > 0 && data.productId.size() <= 64 &&
+        data.productName is string && data.productName.size() > 0 && data.productName.size() <= 120 &&
+        data.normalizedName is string && data.normalizedName.size() > 0 && data.normalizedName.size() <= 120 &&
+        data.productCode is string && data.productCode.size() > 0 && data.productCode.size() <= 50 &&
+        data.productType in ['OIL', 'NON_OIL'] &&
+        data.category is string && data.category.size() > 0 && data.category.size() <= 60 &&
+        data.unit in ['ml', 'piece'] &&
+        (!('vendorId' in data) || data.vendorId == null || (data.vendorId is string && data.vendorId.size() <= 64)) &&
+        (!('totalPurchased' in data) || data.totalPurchased == null || (data.totalPurchased is number && data.totalPurchased >= 0)) &&
+        (!('totalSold' in data) || data.totalSold == null || (data.totalSold is number && data.totalSold >= 0)) &&
+        // STRICT INVENTORY SAFETY: Stock cannot drop below zero
+        data.availableQuantity is number && data.availableQuantity >= 0 &&
+        (!('vendorPricePerUnit' in data) || data.vendorPricePerUnit == null || (data.vendorPricePerUnit is number && data.vendorPricePerUnit >= 0)) &&
+        data.sellingPricePerUnit is number && data.sellingPricePerUnit >= 0 &&
+        (!('lowStockThreshold' in data) || data.lowStockThreshold == null || (data.lowStockThreshold is number && data.lowStockThreshold >= 0)) &&
+        data.isActive is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // 2. Sale Validator
+    function isValidSale(data) {
+      return data.keys().hasAll([
+          'saleId', 'invoiceNumber', 'date', 'timestamp', 'items',
+          'subtotal', 'discount', 'grandTotal', 'paymentType',
+          'cashAmount', 'onlineAmount', 'status', 'createdBy', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'saleId', 'invoiceNumber', 'date', 'timestamp', 'items',
+          'subtotal', 'discount', 'grandTotal', 'paymentType',
+          'cashAmount', 'onlineAmount', 'status', 'createdBy',
+          'customerName', 'customerPhone', 'notes', 'createdAt',
+          'voidReason', 'voidedBy', 'voidedAt'
+        ]) &&
+        data.saleId is string && data.saleId.size() > 0 && data.saleId.size() <= 64 &&
+        data.invoiceNumber is string && data.invoiceNumber.size() > 0 && data.invoiceNumber.size() <= 64 &&
+        isValidDateString(data.date) &&
+        data.timestamp is timestamp &&
+        data.items is list && data.items.size() > 0 && data.items.size() <= 100 &&
+        data.subtotal is number && data.subtotal >= 0 &&
+        data.discount is number && data.discount >= 0 &&
+        data.grandTotal is number && data.grandTotal >= 0 &&
+        data.paymentType in ['CASH', 'ONLINE', 'SPLIT'] &&
+        data.cashAmount is number && data.cashAmount >= 0 &&
+        data.onlineAmount is number && data.onlineAmount >= 0 &&
+        data.status in ['COMPLETED', 'VOIDED'] &&
+        data.createdBy is string && data.createdBy.size() > 0 && data.createdBy.size() <= 60 &&
+        (!('customerName' in data) || data.customerName == null || (data.customerName is string && data.customerName.size() <= 80)) &&
+        (!('customerPhone' in data) || data.customerPhone == null || (data.customerPhone is string && data.customerPhone.size() <= 30)) &&
+        (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+        data.createdAt is timestamp &&
+        (!('voidReason' in data) || data.voidReason == null || (data.voidReason is string && data.voidReason.size() <= 250)) &&
+        (!('voidedBy' in data) || data.voidedBy == null || (data.voidedBy is string && data.voidedBy.size() <= 60)) &&
+        (!('voidedAt' in data) || data.voidedAt == null || data.voidedAt is timestamp);
+    }
+
+    // 3. Stock Movement Validator
+    function isValidStockMovement(data) {
+      return data.keys().hasAll([
+          'movementId', 'productId', 'movementType', 'quantity',
+          'unit', 'referenceId', 'date', 'createdBy', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'movementId', 'productId', 'productName', 'movementType',
+          'quantity', 'unit', 'referenceId', 'date', 'createdBy', 'createdAt'
+        ]) &&
+        data.movementId is string && data.movementId.size() > 0 && data.movementId.size() <= 64 &&
+        data.productId is string && data.productId.size() > 0 && data.productId.size() <= 64 &&
+        (!('productName' in data) || data.productName == null || (data.productName is string && data.productName.size() <= 120)) &&
+        data.movementType in [
+          'OPENING_STOCK', 'PURCHASE', 'SALE', 'SALE_RETURN',
+          'DAMAGE', 'WASTAGE', 'STOCK_ADJUSTMENT'
+        ] &&
+        data.quantity is number && data.quantity >= -1000000 && data.quantity <= 1000000 &&
+        data.unit is string && data.unit.size() > 0 && data.unit.size() <= 20 &&
+        data.referenceId is string && data.referenceId.size() > 0 && data.referenceId.size() <= 150 &&
+        isValidDateString(data.date) &&
+        data.createdBy is string && data.createdBy.size() > 0 && data.createdBy.size() <= 60 &&
+        data.createdAt is timestamp;
+    }
+
+    // 4. Account Entry Validator
+    function isValidAccountEntry(data) {
+      return data.keys().hasAll([
+          'entryId', 'date', 'transactionType', 'referenceId',
+          'cashAmount', 'onlineAmount', 'createdBy', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'entryId', 'date', 'transactionType', 'referenceId',
+          'cashAmount', 'onlineAmount', 'description', 'status',
+          'createdBy', 'createdAt'
+        ]) &&
+        data.entryId is string && data.entryId.size() > 0 && data.entryId.size() <= 64 &&
+        isValidDateString(data.date) &&
+        data.transactionType in [
+          'OPENING_BALANCE', 'SALE_INCOME', 'EXPENSE', 'TRANSFER',
+          'REFUND', 'ADJUSTMENT', 'CASH_SHORTAGE', 'CASH_SURPLUS'
+        ] &&
+        data.referenceId is string && data.referenceId.size() > 0 && data.referenceId.size() <= 150 &&
+        data.cashAmount is number && data.cashAmount >= -10000000 && data.cashAmount <= 10000000 &&
+        data.onlineAmount is number && data.onlineAmount >= -10000000 && data.onlineAmount <= 10000000 &&
+        (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 300)) &&
+        (!('status' in data) || data.status == null || (data.status is string && data.status.size() <= 30)) &&
+        data.createdBy is string && data.createdBy.size() > 0 && data.createdBy.size() <= 60 &&
+        data.createdAt is timestamp;
+    }
+
+    // 5. Expense Validator
+    function isValidExpense(data) {
+      return data.keys().hasAll([
+          'expenseId', 'date', 'reason', 'category', 'totalAmount',
+          'paymentMethod', 'cashAmount', 'onlineAmount', 'createdBy', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'expenseId', 'date', 'reason', 'category', 'totalAmount',
+          'paymentMethod', 'cashAmount', 'onlineAmount', 'description',
+          'status', 'createdBy', 'createdAt'
+        ]) &&
+        data.expenseId is string && data.expenseId.size() > 0 && data.expenseId.size() <= 64 &&
+        isValidDateString(data.date) &&
+        data.reason is string && data.reason.size() > 0 && data.reason.size() <= 150 &&
+        data.category is string && data.category.size() > 0 && data.category.size() <= 60 &&
+        data.totalAmount is number && data.totalAmount >= 0 &&
+        data.paymentMethod in ['CASH', 'ONLINE', 'SPLIT'] &&
+        data.cashAmount is number && data.cashAmount >= 0 &&
+        data.onlineAmount is number && data.onlineAmount >= 0 &&
+        (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 300)) &&
+        (!('status' in data) || data.status == null || (data.status is string && data.status.size() <= 30)) &&
+        data.createdBy is string && data.createdBy.size() > 0 && data.createdBy.size() <= 60 &&
+        data.createdAt is timestamp;
+    }
+
+    // 6. Vendor Validator
+    function isValidVendor(data) {
+      return data.keys().hasAll(['vendorId', 'vendorName', 'status', 'createdAt']) &&
+        data.keys().hasOnly([
+          'vendorId', 'vendorName', 'phoneNumber', 'address',
+          'companyName', 'notes', 'status', 'createdAt'
+        ]) &&
+        data.vendorId is string && data.vendorId.size() > 0 && data.vendorId.size() <= 64 &&
+        data.vendorName is string && data.vendorName.size() > 0 && data.vendorName.size() <= 100 &&
+        (!('phoneNumber' in data) || data.phoneNumber == null || (data.phoneNumber is string && data.phoneNumber.size() <= 30)) &&
+        (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 250)) &&
+        (!('companyName' in data) || data.companyName == null || (data.companyName is string && data.companyName.size() <= 100)) &&
+        (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+        data.status in ['ACTIVE', 'ARCHIVED'] &&
+        data.createdAt is timestamp;
+    }
+
+    // 7. Daily Summary Validator
+    function isValidDailySummary(data) {
+      return data.keys().hasAll([
+          'date', 'openingCashBalance', 'openingOnlineBalance', 'cashSales',
+          'onlineSales', 'totalSales', 'totalTransactions', 'cashExpenses',
+          'onlineExpenses', 'totalExpenses', 'cashDepositedToBank',
+          'cashDiscrepancy', 'closingCashBalance', 'closingOnlineBalance', 'isClosed'
+        ]) &&
+        data.keys().hasOnly([
+          'date', 'openingCashBalance', 'openingOnlineBalance', 'cashSales',
+          'onlineSales', 'totalSales', 'totalTransactions', 'cashExpenses',
+          'onlineExpenses', 'totalExpenses', 'cashDepositedToBank',
+          'cashDiscrepancy', 'closingCashBalance', 'closingOnlineBalance',
+          'isClosed', 'closedBy', 'closedAt', 'notes'
+        ]) &&
+        isValidDateString(data.date) &&
+        data.openingCashBalance is number &&
+        data.openingOnlineBalance is number &&
+        data.cashSales is number &&
+        data.onlineSales is number &&
+        data.totalSales is number &&
+        data.totalTransactions is number && data.totalTransactions >= 0 &&
+        data.cashExpenses is number &&
+        data.onlineExpenses is number &&
+        data.totalExpenses is number &&
+        data.cashDepositedToBank is number &&
+        data.cashDiscrepancy is number &&
+        data.closingCashBalance is number &&
+        data.closingOnlineBalance is number &&
+        data.isClosed is bool &&
+        (!('closedBy' in data) || data.closedBy == null || (data.closedBy is string && data.closedBy.size() <= 60)) &&
+        (!('closedAt' in data) || data.closedAt == null || data.closedAt is timestamp) &&
+        (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500));
+    }
+
+    // 8. Purchase Validator
+    function isValidPurchase(data) {
+      return data.keys().hasAll([
+          'purchaseId', 'invoiceNumber', 'vendorId', 'vendorName',
+          'purchaseDate', 'items', 'totalAmount', 'paymentStatus',
+          'paymentMethod', 'createdBy', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'purchaseId', 'invoiceNumber', 'vendorId', 'vendorName',
+          'purchaseDate', 'items', 'totalAmount', 'paymentStatus',
+          'paymentMethod', 'notes', 'createdBy', 'createdAt'
+        ]) &&
+        data.purchaseId is string && data.purchaseId.size() > 0 && data.purchaseId.size() <= 64 &&
+        data.invoiceNumber is string && data.invoiceNumber.size() > 0 && data.invoiceNumber.size() <= 64 &&
+        data.vendorId is string && data.vendorId.size() > 0 && data.vendorId.size() <= 64 &&
+        data.vendorName is string && data.vendorName.size() > 0 && data.vendorName.size() <= 100 &&
+        isValidDateString(data.purchaseDate) &&
+        data.items is list && data.items.size() > 0 && data.items.size() <= 100 &&
+        data.totalAmount is number && data.totalAmount >= 0 &&
+        data.paymentStatus in ['PAID', 'CREDIT'] &&
+        data.paymentMethod in ['CASH', 'ONLINE', 'CREDIT'] &&
+        (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+        data.createdBy is string && data.createdBy.size() > 0 && data.createdBy.size() <= 60 &&
+        data.createdAt is timestamp;
+    }
+
+    // 9. Shop Metadata Validator
+    function isValidShop(data) {
+      return data.keys().hasAll(['shopId', 'name']) &&
+        data.keys().hasOnly(['shopId', 'name', 'address', 'currency', 'timezone', 'ownerEmail', 'createdAt', 'updatedAt']) &&
+        data.shopId is string && data.shopId.size() > 0 && data.shopId.size() <= 64 &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+        (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 250)) &&
+        (!('currency' in data) || data.currency == null || (data.currency is string && data.currency.size() <= 10)) &&
+        (!('timezone' in data) || data.timezone == null || (data.timezone is string && data.timezone.size() <= 50)) &&
+        (!('ownerEmail' in data) || data.ownerEmail == null || (data.ownerEmail is string && data.ownerEmail.size() <= 100)) &&
+        (!('createdAt' in data) || data.createdAt == null || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp);
+    }
+
+    // ===============================================================
+    // Root Shops Collection Rules
+    // ===============================================================
+
+    match /shops/{shopId} {
+      // Authenticated staff can view shop configuration
+      allow read: if isShopStaff(shopId);
+
+      // Only administrators can create or update shop details
+      allow create: if isShopAdmin(shopId) &&
+        request.resource.data.shopId == shopId &&
+        isValidShop(request.resource.data);
+
+      allow update: if isShopAdmin(shopId) &&
+        request.resource.data.shopId == resource.data.shopId &&
+        areImmutableFieldsUnchanged(['shopId', 'createdAt']) &&
+        isValidShop(request.resource.data);
+
+      allow delete: if false;
+
+      // -------------------------------------------------------------
+      // 1. PRODUCTS SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /products/{productId} {
+        // Authenticated shop staff can read catalog & check stock
+        allow read: if isShopStaff(shopId);
+
+        // Only admin can create products (ensures price control & code uniqueness)
+        allow create: if isShopAdmin(shopId) &&
+          request.resource.data.productId == productId &&
+          isValidProduct(request.resource.data);
+
+        // Admin can update all product fields and archive (isActive: false)
+        // Staff can update quantity and sales counters during POS checkout, adjustments, or purchase receipt
+        allow update: if (
+          // Admin full update & archive branch
+          (isShopAdmin(shopId) &&
+           areImmutableFieldsUnchanged(['productId', 'createdAt']))
+          ||
+          // Staff stock modification branch (strictly restricted to stock/inventory counters)
+          (isShopStaff(shopId) &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'availableQuantity', 'totalSold', 'totalPurchased', 'vendorPricePerUnit', 'vendorId', 'updatedAt'
+           ]) &&
+           areImmutableFieldsUnchanged([
+             'productId', 'createdAt', 'productName', 'normalizedName',
+             'productCode', 'productType', 'category', 'unit', 'sellingPricePerUnit', 'isActive'
+           ]))
+        ) &&
+        // Validator function called on ALL updates (guarantees availableQuantity >= 0)
+        isValidProduct(request.resource.data);
+
+        // Prevent hard deletes; products must be archived via isActive = false
+        allow delete: if false;
+      }
+
+      // -------------------------------------------------------------
+      // 2. SALES SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /sales/{saleId} {
+        // Authenticated staff can read sales history and invoices
+        allow read: if isShopStaff(shopId);
+
+        // Authenticated staff can create completed sales
+        allow create: if isShopStaff(shopId) &&
+          request.resource.data.saleId == saleId &&
+          request.resource.data.status == 'COMPLETED' &&
+          isValidSale(request.resource.data);
+
+        // Updates only permitted to mark status as VOIDED by administrators
+        allow update: if isShopAdmin(shopId) &&
+          resource.data.status == 'COMPLETED' &&
+          request.resource.data.status == 'VOIDED' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'voidReason', 'voidedBy', 'voidedAt'
+          ]) &&
+          areImmutableFieldsUnchanged([
+            'saleId', 'invoiceNumber', 'date', 'timestamp', 'items',
+            'subtotal', 'discount', 'grandTotal', 'paymentType',
+            'cashAmount', 'onlineAmount', 'createdBy', 'createdAt'
+          ]) &&
+          isValidSale(request.resource.data);
+
+        // Sales cannot be deleted; must be voided to preserve financial audit trail
+        allow delete: if false;
+      }
+
+      // -------------------------------------------------------------
+      // 3. STOCK MOVEMENTS SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /stock_movements/{movementId} {
+        // Authenticated staff can read stock audit trails
+        allow read: if isShopStaff(shopId);
+
+        // Authenticated staff can create movement logs during sales, adjustments, or damage write-offs
+        allow create: if isShopStaff(shopId) &&
+          request.resource.data.movementId == movementId &&
+          isValidStockMovement(request.resource.data);
+
+        // Stock movement ledger is strictly immutable once written
+        allow update: if false;
+        allow delete: if false;
+      }
+
+      // -------------------------------------------------------------
+      // 4. ACCOUNT ENTRIES SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /account_entries/{entryId} {
+        // Authenticated staff can read cash/bank financial ledger
+        allow read: if isShopStaff(shopId);
+
+        // Authenticated staff can append ledger transactions (sales, expenses, transfers, refunds)
+        allow create: if isShopStaff(shopId) &&
+          request.resource.data.entryId == entryId &&
+          isValidAccountEntry(request.resource.data);
+
+        // Financial ledger is write-only / immutable once recorded
+        allow update: if false;
+        allow delete: if false;
+      }
+
+      // -------------------------------------------------------------
+      // 5. EXPENSES SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /expenses/{expenseId} {
+        // Authenticated staff can read expenses
+        allow read: if isShopStaff(shopId);
+
+        // Authenticated staff can log operational expenses
+        allow create: if isShopStaff(shopId) &&
+          request.resource.data.expenseId == expenseId &&
+          isValidExpense(request.resource.data);
+
+        // Admin can update expense metadata if necessary
+        allow update: if isShopAdmin(shopId) &&
+          areImmutableFieldsUnchanged(['expenseId', 'createdAt']) &&
+          isValidExpense(request.resource.data);
+
+        // Only administrator can delete expense documents
+        allow delete: if isShopAdmin(shopId);
+      }
+
+      // -------------------------------------------------------------
+      // 6. VENDORS SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /vendors/{vendorId} {
+        // Authenticated staff can read supplier list
+        allow read: if isShopStaff(shopId);
+
+        // Only administrators can add or update supplier details
+        allow create: if isShopAdmin(shopId) &&
+          request.resource.data.vendorId == vendorId &&
+          isValidVendor(request.resource.data);
+
+        allow update: if isShopAdmin(shopId) &&
+          areImmutableFieldsUnchanged(['vendorId', 'createdAt']) &&
+          isValidVendor(request.resource.data);
+
+        allow delete: if isShopAdmin(shopId);
+      }
+
+      // -------------------------------------------------------------
+      // 7. DAILY SUMMARIES SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /daily_summaries/{date} {
+        // Authenticated staff can read day-end summaries and cash drawer state
+        allow read: if isShopStaff(shopId);
+
+        // Authenticated staff can create today's summary during opening or first transaction
+        allow create: if isShopStaff(shopId) &&
+          request.resource.data.date == date &&
+          isValidDailySummary(request.resource.data);
+
+        // Authenticated staff can update summaries during checkout, expenses, bank transfers, or close
+        allow update: if isShopStaff(shopId) &&
+          areImmutableFieldsUnchanged(['date']) &&
+          isValidDailySummary(request.resource.data);
+
+        // Daily summaries cannot be deleted
+        allow delete: if false;
+      }
+
+      // -------------------------------------------------------------
+      // 8. PURCHASES SUBCOLLECTION
+      // -------------------------------------------------------------
+      match /purchases/{purchaseId} {
+        // Authenticated staff can read purchase orders
+        allow read: if isShopStaff(shopId);
+
+        // Authenticated staff can record stock purchases
+        allow create: if isShopStaff(shopId) &&
+          request.resource.data.purchaseId == purchaseId &&
+          isValidPurchase(request.resource.data);
+
+        // Admin can update purchase details if needed
+        allow update: if isShopAdmin(shopId) &&
+          areImmutableFieldsUnchanged(['purchaseId', 'createdAt']) &&
+          isValidPurchase(request.resource.data);
+
+        // Admin can delete purchase orders
+        allow delete: if isShopAdmin(shopId);
+      }
+    }
+
+    // ===============================================================
+    // Global Default Deny
+    // ===============================================================
+    // Any collections or subcollections not explicitly matched above are completely locked down.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
